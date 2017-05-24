@@ -1,0 +1,20 @@
+#usr/bin/perl
+
+use Cwd 'abs_path';
+use File::Spec;
+
+my $loc = abs_path(__FILE__);
+@dirs = File::Spec->splitdir($loc);
+pop @dirs;
+my $asgnloc = File::Spec->catdir(@dirs);
+
+
+while(1)
+{
+$start_time = time();
+system ("perl $asgnloc/network");
+system ("perl $asgnloc/server");
+$end_time = time();
+$difference = $end_time - $start_time;
+if($difference<60){sleep(60 - $difference)};
+}

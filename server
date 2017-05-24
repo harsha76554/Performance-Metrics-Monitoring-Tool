@@ -1,0 +1,85 @@
+#!/usr/bin/perl
+use LWP::Simple;
+use DBI;
+use DBD::mysql;
+use Cwd 'abs_path';
+use RRD::Simple ();
+
+$cwd = abs_path(__FILE__);
+@find = split('/',$cwd);
+splice @find,-2;
+push (@find,'db.conf');
+$rpl=join('/',@find);
+require $rpl;
+
+#connecting to database 
+$dbh = DBI->connect("DBI:mysql:$database:$host:$port",$username,$password);
+
+my $table= "CREATE TABLE IF NOT EXISTS asgn2(
+    id int(11) NOT NULL PRIMARY KEY AUTO_INCREMENT,
+    IP varchar(30) NOT NULL,UNIQUE key(IP)
+    ) " ;
+    
+    $sqltable=$dbh->prepare($table) or die "Can't create $table:$dbh->errstr\n";
+ $sqltable->execute() or die "can't execute create table: $sqltable->errstr";
+
+$query = "select * from asgn2";
+$sqlQuery =$dbh->prepare($query) or die "Can't prepare $query: $dbh->errstr\n";
+$sqlQuery->execute() or die "can't execute the query: $sqlQuery->errstr";
+
+$hash_ref = $sqlQuery->fetchall_hashref('id');
+
+for my $f(keys($hash_ref)) 
+  {
+
+  my $id = $hash_ref->{$f}{'id'};
+  my $IP = $hash_ref->{$f}{'IP'};
+
+my($url)="http://$IP/server-status?auto";
+my($server_status)=get($url);
+my($total_accesses,$total_kbytes,$cpuload,$uptime, $reqpersec,$bytespersec,$bytesperreq,$busyworkers, $idleworkers,$totalworkers);
+
+if (! $server_status) {
+print "Can't access $url\nCheck apache configuration\n\n";
+exit(1);
+}
+
+$total_accesses = $1 if ($server_status =~ /Total\ Accesses:\ ([\d|\.]
+++)/ig)||0;
+$total_kbytes = $1 if ($server_status =~ /Total\ kBytes:\ ([\d|\.]+)/g
++i);
+$cpuload = $1 if ($server_status =~ /CPULoad:\ ([\d|\.]+)/gi);
+$uptime = $1 if ($server_status =~ /Uptime:\ ([\d|\.]+)/gi);
+$reqpersec = $1 if ($server_status =~ /ReqPerSec:\ ([\d|\.]+)/gi);
+$bytespersec = $1 if ($server_status =~ /BytesPerSec:\ ([\d|\.]+)/gi);
+$bytesperreq = $1 if ($server_status =~ /BytesPerReq:\ ([\d|\.]+)/gi);
+print "cpuload:$IP = $cpuload,\nuptime:$IP=$uptime,\nreqpersec:$IP=$reqpersec,\nbytespersec:$IP=$bytespersec,\nbytesperreq:$IP=$bytesperreq\n";
+
+
+ #create a rrd interface
+$rrdfile = "$IP.rrd";
+my $rrd = RRD::Simple->new( file  => $rrdfile,
+                            cf => [ qw(AVERAGE MAX)],
+                            );
+
+my @bytesarray = ();
+ push @bytesarray,("cpuload$id"=>"GAUGE"),("uptime$id"=>"GAUGE"),("reqpersec$id"=>"GAUGE"),("bytespersec$id"=>"GAUGE"),("bytesperreq$id"=>"GAUGE");
+ unless (-f $rrdfile) {
+                         
+                         $rrd->create($rrdfile,"year",@bytesarray);                         
+                         
+                         }
+
+my @update = ();
+#update rrd 
+      
+                
+                  #print "$_ \n";             
+                  push @update,("cpuload$id"=>$cpuload),("uptime$id"=>$uptime),("reqpersec$id"=>$reqpersec),("bytespersec$id"=>$bytespersec),("bytesperreq$id"=>$bytesperreq);                                                
+                    
+                  
+             
+ $rrd->update($rrdfile,@update); 
+
+
+}
